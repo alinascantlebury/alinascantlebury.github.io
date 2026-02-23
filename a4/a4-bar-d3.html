@@ -1,0 +1,118 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="a4-styles.css">
+    <title>A4: Bar Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const svgWidth = window.innerWidth;
+        const svgHeight = window.innerHeight;
+        const margin = {top: 60, right: 40, bottom: 80, left: 80};
+
+        const width = svgWidth - margin.left - margin.right;
+        const height = svgHeight - margin.top - margin.bottom;
+
+        const svg = d3.select("body").append("svg")
+            .attr("width", svgWidth)
+            .attr("height", svgHeight);
+
+        const chart = svg.append("g")
+            .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        d3.csv("frequency.csv").then(function(data) {
+
+            data.forEach(function(d) {
+                d.Frequency = +d.Frequency;
+            });
+
+            const scaleX = d3.scaleBand()
+                .domain(data.map(d => d.Number))
+                .range([0, width])
+                .padding(0.1);
+
+            const scaleY = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.Frequency)])
+                .nice()
+                .range([height, 0]);
+
+            chart.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(scaleX).tickValues( //tickValues:  https://www.geeksforgeeks.org/javascript/d3-js-axis-tickvalues-function/
+                    data.filter((_, i) => i % 5 === 0).map(d => d.Number)
+                ));
+
+            chart.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(scaleY).ticks(8));
+
+            chart.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => scaleX(d.Number))
+                .attr("y", d => scaleY(d.Frequency))
+                .attr("width", scaleX.bandwidth())
+                .attr("height", d => height - scaleY(d.Frequency))
+                .on("mouseover", (event, d) => {
+                    tooltip
+                        .html(`<strong>Number:</strong> ${d.Number}<br><strong>Frequency:</strong> ${d.Frequency}`)
+                        .style("opacity", 1);
+                })
+                .on("mousemove", (event) => {
+                    tooltip
+                        .style("left", (event.pageX + 12) + "px")
+                        .style("top",  (event.pageY - 28) + "px");
+                })
+                .on("mouseleave", () => {
+                    tooltip.style("opacity", 0);
+                });
+
+            svg.append("text")
+                .attr("class", "chart-title")
+                .attr("x", svgWidth / 2)
+                .attr("y", margin.top / 2)
+                .attr("text-anchor", "middle")
+                .text("Lottery Number Frequency");
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("x", svgWidth / 2)
+                .attr("y", svgHeight - 24)
+                .attr("text-anchor", "middle")
+                .text("Winning Number");
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -(svgHeight / 2))
+                .attr("y", 22)
+                .attr("text-anchor", "middle")
+                .text("Frequency");
+        });
+    </script>
+</body>
+</html>

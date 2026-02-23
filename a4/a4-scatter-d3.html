@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A4: Scatterplot</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="a4-styles.css">
+    <style>
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+
+    <div id="chart-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const svgWidth = window.innerWidth;
+        const svgHeight = window.innerHeight;
+        const margin = {top: 60, right: 40, bottom: 80, left: 80};
+
+        const width = svgWidth - margin.left - margin.right;
+        const height = svgHeight - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart-container").append("svg")
+            .attr("width", svgWidth)
+            .attr("height", svgHeight);
+
+        const chart = svg.append("g")
+            .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        d3.csv("frequency.csv").then(function(data) {
+
+            data.forEach(function(d) {
+                d.Number = +d.Number;
+                d.Frequency = +d.Frequency;
+            });
+
+            const scaleX = d3.scaleLinear()
+                .domain([d3.min(data, d => d.Number) - 1, d3.max(data, d => d.Number) + 1])
+                .range([0, width]);
+
+            const scaleY = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.Frequency)])
+                .nice()
+                .range([height, 0]);
+
+            chart.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(scaleX).ticks(10));
+
+            chart.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(scaleY).ticks(8));
+
+            chart.selectAll(".dot")
+                .data(data)
+                .enter()
+                .append("circle")
+                .attr("class", "dot")
+                .attr("cx", d => scaleX(d.Number))
+                .attr("cy", d => scaleY(d.Frequency))
+                .attr("r", 5)
+                .on("mouseover", (event, d) => {
+                    tooltip
+                        .html(`<strong>Number:</strong> ${d.Number}<br><strong>Frequency:</strong> ${d.Frequency}`)
+                        .style("opacity", 1);
+                })
+                .on("mousemove", (event) => {
+                    tooltip
+                        .style("left", (event.pageX + 12) + "px")
+                        .style("top",  (event.pageY - 28) + "px");
+                })
+                .on("mouseleave", () => {
+                    tooltip.style("opacity", 0);
+                });
+
+            svg.append("text")
+                .attr("class", "chart-title")
+                .attr("x", svgWidth / 2)
+                .attr("y", margin.top / 2)
+                .attr("text-anchor", "middle")
+                .text("Lottery Number Frequency");
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("x", svgWidth / 2)
+                .attr("y", svgHeight - 10)
+                .attr("text-anchor", "middle")
+                .text("Winning Number");
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -(svgHeight / 2))
+                .attr("y", 20)
+                .attr("text-anchor", "middle")
+                .text("Frequency");
+        });
+    </script>
+</body>
+</html>

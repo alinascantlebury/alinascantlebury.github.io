@@ -1,0 +1,44 @@
+body { 
+    margin: 0; 
+    padding: 0; 
+    position: relative;
+}
+.bar { 
+    fill: steelblue; 
+}
+.axis-label { 
+    font-size: 20px; font-family: Arial; 
+}
+.chart-title { 
+    font-size: 20px; font-family: Arial; font-weight: bold;
+ }
+ .bar:hover{ 
+    fill:brown
+}
+.dot {
+    fill: steelblue;
+    opacity: 0.8;
+}
+.dot:hover {
+    fill: brown;
+}
+
+h2, h3 {
+    text-align: center;
+    margin: 5px 0;
+}
+h2 { font-size: 22px; }
+h3 { font-size: 14px; color: #555; font-weight: normal; }
+.tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 10;  /* add this */
+
+}

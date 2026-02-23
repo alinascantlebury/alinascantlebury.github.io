@@ -1,0 +1,160 @@
+<!--
+ References:
+ - D3 Heatmap tutorial by Anthony Munnelly:
+    https://github.com/amunnelly/d3-tutorial/tree/main/code/12-D3-Heatmaps
+   Used as reference for scaleBand setup and tile rendering approach
+- Axis Labels: https://stackoverflow.com/questions/11189284/d3-axis-labeling
+- D3 official docs: https://d3js.org
+
+  -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A4: Heatmap</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="a4-styles.css">
+    <style>
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+
+    <div id="chart-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const svgWidth = window.innerWidth;
+        const svgHeight = window.innerHeight;
+        const margin = { top: 60, bottom: 100, left: 100, right: 100 };
+
+        const width  = svgWidth  - margin.left - margin.right;
+        const height = svgHeight - margin.top  - margin.bottom;
+
+        const svg = d3.select("#chart-container").append("svg")
+            .attr("width", svgWidth)
+            .attr("height", svgHeight);
+
+        const plot = svg.append("g")
+            .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        d3.csv("frequency.csv").then(function(data) {
+
+            data.forEach(d => {
+                d.Number    = +d.Number;
+                d.Frequency = +d.Frequency;
+                d.col = ((d.Number - 1) % 10) + 1;
+                d.row = Math.floor((d.Number - 1) / 10) + 1;
+            });
+
+            const cols = [...new Set(data.map(d => d.col))].sort((a,b) => a-b).map(String);
+            const rows = [...new Set(data.map(d => d.row))].sort((a,b) => a-b).map(String);
+
+            const scaleX = d3.scaleBand(cols, [0, width]).padding(0.05);
+            const scaleY = d3.scaleBand(rows, [0, height]).padding(0.05);
+
+            const scaleColor = d3.scaleSequential()
+                .domain(d3.extent(data, d => d.Frequency))
+                .interpolator(d3.interpolateYlOrRd);
+
+            plot.selectAll("rect.tile")
+                .data(data).enter()
+                .append("rect")
+                .attr("class", "heatmap-tile")
+                .attr("x", d => scaleX(String(d.col)))
+                .attr("y", d => scaleY(String(d.row)))
+                .attr("width",  scaleX.bandwidth())
+                .attr("height", scaleY.bandwidth())
+                .attr("rx", 4)
+                .style("fill", d => scaleColor(d.Frequency))
+                .on("mouseover", (event, d) => {
+                    tooltip
+                        .html(`<strong>Number:</strong> ${d.Number}<br><strong>Frequency:</strong> ${d.Frequency}`)
+                        .style("opacity", 1);
+                })
+                .on("mousemove", (event) => {
+                    tooltip
+                        .style("left", (event.pageX + 12) + "px")
+                        .style("top",  (event.pageY - 28) + "px");
+                })
+                .on("mouseleave", () => {
+                    tooltip.style("opacity", 0);
+                });
+
+            plot.selectAll("text.num-label")
+                .data(data).enter()
+                .append("text")
+                .attr("class", "tile-label")
+                .attr("x", d => scaleX(String(d.col)) + scaleX.bandwidth() / 2)
+                .attr("y", d => scaleY(String(d.row)) + scaleY.bandwidth() / 2 - 6)
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "middle")
+                .style("fill", d => d.Frequency > 210 ? "white" : "black")
+                .style("font-size", "16px")
+                .style("font-weight", "bold")
+                .text(d => String(d.Number).padStart(2, "0"));
+
+            plot.selectAll("text.freq-label")
+                .data(data).enter()
+                .append("text")
+                .attr("class", "freq-label tile-label")
+                .attr("x", d => scaleX(String(d.col)) + scaleX.bandwidth() / 2)
+                .attr("y", d => scaleY(String(d.row)) + scaleY.bandwidth() / 2 + 10)
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "middle")
+                .style("fill", d => d.Frequency > 210 ? "white" : "#333")
+                .style("font-size", "12px")
+                .text(d => d.Frequency);
+
+            const [minF, maxF] = d3.extent(data, d => d.Frequency);
+            const legendWidth = 200, legendHeight = 12;
+            const legendX = width - legendWidth, legendY = height + 45;
+
+            const gradient = svg.append("defs").append("linearGradient").attr("id", "legend-gradient");
+            gradient.selectAll("stop")
+                .data([0, 0.25, 0.5, 0.75, 1]).enter()
+                .append("stop")
+                .attr("offset", d => d)
+                .attr("stop-color", d => scaleColor(minF + d * (maxF - minF)));
+
+            plot.append("rect")
+                .attr("x", legendX).attr("y", legendY)
+                .attr("width", legendWidth).attr("height", legendHeight)
+                .style("fill", "url(#legend-gradient)");
+
+            plot.append("text")
+                .attr("x", legendX)
+                .attr("y", legendY - 4)
+                .style("font-size", "10px")
+                .text(`Low: ${minF}`);
+            plot.append("text")
+                .attr("x", legendX + legendWidth)
+                .attr("y", legendY - 4)
+                .attr("text-anchor", "end")
+                .style("font-size", "10px")
+                .text(`High: ${maxF}`);
+
+            svg.append("text")
+                .attr("class", "chart-title")
+                .attr("x", svgWidth / 2)
+                .attr("y", margin.top / 2)
+                .attr("text-anchor", "middle")
+                .text("Lottery Number Frequency Heatmap");
+        });
+    </script>
+</body>
+</html>
