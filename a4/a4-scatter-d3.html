@@ -56,7 +56,6 @@
 
             const scaleY = d3.scaleLinear()
                 .domain([0, d3.max(data, d => d.Frequency)])
-                .nice()
                 .range([height, 0]);
 
             chart.append("g")
