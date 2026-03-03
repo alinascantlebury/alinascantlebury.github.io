@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A5: Line Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        a { align-self: flex-start; margin-bottom: 10px; }
+        .axis-label { font-size: 13px; fill: #333; }
+        .chart-title { font-size: 16px; font-weight: bold; fill: #111; }
+        .line {
+            fill: none;
+            stroke-width: 2.5px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .legend-label { font-size: 12px; }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+    <div id="my_dataviz"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        var margin = { top: 60, right: 180, bottom: 70, left: 60 },
+            width  = window.innerWidth  - margin.left - margin.right,
+            height = window.innerHeight - margin.top  - margin.bottom;
+
+        var svg = d3.select("#my_dataviz")
+            .append("svg")
+                .attr("width",  width  + margin.left + margin.right)
+                .attr("height", height + margin.top  + margin.bottom)
+            .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        // categories
+        var strategies = [
+            { key: "funny",      label: "Funny",      color: "#4e79a7" },
+            { key: "celebrity",  label: "Celebrity",  color: "#f28e2b" },
+            { key: "animals",    label: "Animals",    color: "#59a14f" },
+            { key: "use_sex",    label: "Sex Appeal", color: "#e15759" }
+        ];
+
+        var tooltip = d3.select("#tooltip");
+
+        d3.csv("superbowl-ads.csv").then(function(raw) {
+
+            // Convert booleans and year to use
+            var boolCols = ["funny","show_product_quickly","patriotic","celebrity","danger","animals","use_sex"];
+            raw.forEach(function(d) {
+                d.year = +d.year;
+                boolCols.forEach(function(col) {
+                    d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+                });
+            });
+
+            // aggregate by year.. for each strategy, what % of ads used it that year
+            var byYear = d3.rollups(raw,
+                function(v) {
+                    var obj = { year: v[0].year };
+                    strategies.forEach(function(s) {
+                        obj[s.key] = d3.mean(v, d => d[s.key]);
+                    });
+                    return obj;
+                },
+                d => d.year
+            ).map(d => d[1]).sort((a, b) => a.year - b.year);
+
+            // axes and scales
+
+            var xScale = d3.scaleTime()
+                .domain(d3.extent(byYear, d => new Date(d.year, 0)))
+                .range([0, width]);
+
+            var yScale = d3.scaleLinear()
+                .domain([0, 1])
+                .range([height, 0]);
+
+            // X axis
+            svg.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(xScale).ticks(10).tickFormat(d3.timeFormat("%Y")));
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("text-anchor", "middle")
+                .attr("x", width / 2)
+                .attr("y", height + 50)
+                .text("Year");
+
+            // Y axis
+            svg.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(".0%")));
+
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("text-anchor", "middle")
+                .attr("x", -(height / 2))
+                .attr("y", -45)
+                .text("% of Ads Using Strategy");
+
+            // lines
+
+            strategies.forEach(function(s) {
+
+                // Line generator - Chapter 11 
+                var lineGen = d3.line()
+                    .defined(function(d) { return d[s.key] != null; })
+                    .x(function(d) { return xScale(new Date(d.year, 0)); })
+                    .y(function(d) { return yScale(d[s.key]); });
+
+                // Draw line (datum() pattern from Chapter 11)
+                svg.append("path")
+                    .datum(byYear)
+                    .attr("class", "line")
+                    .attr("d", lineGen)
+                    .attr("stroke", s.color);
+
+                // Dots at each year for hover
+                svg.selectAll("circle.dot-" + s.key)
+                    .data(byYear)
+                    .enter()
+                    .append("circle")
+                        .attr("class", "dot-" + s.key)
+                        .attr("cx", d => xScale(new Date(d.year, 0)))
+                        .attr("cy", d => yScale(d[s.key]))
+                        .attr("r", 4)
+                        .attr("fill", s.color)
+                        .attr("stroke", "#fff")
+                        .attr("stroke-width", 1.5)
+                    .on("mouseover", function(event, d) {
+                        tooltip.style("opacity", 1)
+                            .html("<strong>" + d.year + "</strong><br>" +
+                                  s.label + ": " + Math.round(d[s.key] * 100) + "%")
+                            .style("left", (event.pageX + 12) + "px")
+                            .style("top",  (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", function(event) {
+                        tooltip.style("left", (event.pageX + 12) + "px")
+                               .style("top",  (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", function() { tooltip.style("opacity", 0); });
+            });
+
+            // legend
+            var legendX = width + 20;
+            strategies.forEach(function(s, i) {
+                svg.append("line")
+                    .attr("x1", legendX).attr("x2", legendX + 24)
+                    .attr("y1", i * 28).attr("y2", i * 28)
+                    .attr("stroke", s.color).attr("stroke-width", 2.5);
+                svg.append("circle")
+                    .attr("cx", legendX + 12).attr("cy", i * 28)
+                    .attr("r", 4).attr("fill", s.color);
+                svg.append("text")
+                    .attr("class", "legend-label")
+                    .attr("x", legendX + 32).attr("y", i * 28 + 4)
+                    .text(s.label);
+            });
+
+            //  title
+            svg.append("text")
+                .attr("class", "chart-title")
+                .attr("x", width / 2).attr("y", -30)
+                .attr("text-anchor", "middle")
+                .text("Super Bowl Ad Strategies Over Time (2000–2020)");
+
+            svg.append("text")
+                .attr("x", width / 2).attr("y", -12)
+                .attr("text-anchor", "middle")
+                .style("font-size", "12px").style("fill", "#666")
+                .text("% of ads per year using each strategy");
+        });
+    </script>
+</body>
+</html>

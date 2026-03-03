@@ -1,0 +1,226 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A5: Bubble Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        a { align-self: flex-start; margin-bottom: 10px; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .axis-label { font-size: 13px; fill: #333; }
+        .chart-title { font-size: 16px; font-weight: bold; fill: #111; }
+        .bubbles { stroke: white; stroke-width: 1px; opacity: 0.85; }
+    </style>
+</head>
+<body>
+    
+    <a href="../index.html">← Back</a>
+    <div id="my_dataviz"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+                    // sources:
+                    // https://d3-graph-gallery.com/graph/bubble_template.html
+                    // https://d3-legend.susielu.com/
+
+
+        var margin = { top: 70, right: 160, bottom: 80, left: 80 },
+            width  = 860 - margin.left - margin.right,
+            height = 560 - margin.top  - margin.bottom;
+
+        var svg = d3.select("#my_dataviz")
+            .append("svg")
+                .attr("width",  width  + margin.left + margin.right)
+                .attr("height", height + margin.top  + margin.bottom)
+            .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        d3.csv("superbowl-ads.csv").then(function(raw) {
+
+            var boolCols = ["funny","show_product_quickly","patriotic","celebrity","danger","animals","use_sex"];
+            raw.forEach(function(d) {
+                d.year = +d.year;
+                boolCols.forEach(function(col) {
+                    d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+                });
+                d.like_count = +d.like_count || 0;
+                d.view_count = +d.view_count || 0;
+            });
+
+            var brands = d3.rollups(raw,
+                function(v) {
+                    return {
+                        brand:          v[0].brand,
+                        total_ads:      v.length,
+                        funny_rate:     d3.mean(v, d => d.funny),
+                        sex_rate:       d3.mean(v, d => d.use_sex),
+                        celebrity_rate: d3.mean(v, d => d.celebrity),
+                        total_views:    d3.sum(v, d => d.view_count),
+                    };
+                },
+                d => d.brand
+            ).map(d => d[1]);
+
+            var data = brands.filter(d => d.total_ads >= 2);
+
+            // X: % celebrity
+            var x = d3.scaleLinear().domain([0, 1]).range([0, width]);
+            svg.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format(".0%")));
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("text-anchor", "middle")
+                .attr("x", width / 2)
+                .attr("y", height + 52)
+                .text("% of Ads Using a Celebrity");
+
+            // Y: % funny
+            var y = d3.scaleLinear().domain([0, 1]).range([height, 0]);
+            svg.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(".0%")));
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("text-anchor", "middle")
+                .attr("x", -(height / 2))
+                .attr("y", -60)
+                .text("% of Ads Using Humor");
+
+            // Size: total ads
+            var z = d3.scaleSqrt()
+                .domain([0, d3.max(data, d => d.total_ads)])
+                .range([8, 50]);
+
+            // Color: % sex appeal
+            var colorScale = d3.scaleSequential()
+                .domain([0, 1])
+                .interpolator(d3.interpolateBlues);
+
+            // Tooltip
+            var tooltip = d3.select("#tooltip");
+            var showTooltip = function(event, d) {
+                tooltip.style("opacity", 1)
+                    .html("<strong>" + d.brand + "</strong><br>" +
+                          "Total Ads: " + d.total_ads + "<br>" +
+                          "Funny: " + Math.round(d.funny_rate * 100) + "%<br>" +
+                          "Celebrity: " + Math.round(d.celebrity_rate * 100) + "%<br>" +
+                          "Sex Appeal: " + Math.round(d.sex_rate * 100) + "%<br>" +
+                          "Total Views: " + d3.format(",")(d.total_views))
+                    .style("left", (event.pageX + 12) + "px")
+                    .style("top",  (event.pageY - 28) + "px");
+            };
+            var moveTooltip = function(event) {
+                tooltip.style("left", (event.pageX + 12) + "px")
+                       .style("top",  (event.pageY - 28) + "px");
+            };
+            var hideTooltip = function() { tooltip.style("opacity", 0); };
+
+            // Circles
+            svg.append("g")
+                .selectAll("circle")
+                .data(data)
+                .enter()
+                .append("circle")
+                    .attr("class", "bubbles")
+                    .attr("cx", d => x(d.celebrity_rate))
+                    .attr("cy", d => y(d.funny_rate))
+                    .attr("r",  d => z(d.total_ads))
+                    .style("fill", d => colorScale(d.sex_rate))
+                .on("mouseover", showTooltip)
+                .on("mousemove", moveTooltip)
+                .on("mouseleave", hideTooltip);
+
+            // Brand labels
+            svg.append("g")
+                .selectAll("text.brand-label")
+                .data(data)
+                .enter()
+                .append("text")
+                    .attr("x", d => x(d.celebrity_rate))
+                    .attr("y", d => y(d.funny_rate) + 4)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "10px")
+                    .style("fill", "#fff")
+                    .style("pointer-events", "none")
+                    .text(d => d.brand);
+
+            // legends
+            var legendX = width + 25;
+
+            // Size legend
+            var sizeLegendY = 60;
+            svg.append("text").attr("x", legendX).attr("y", sizeLegendY)
+                .style("font-size", "12px").style("font-weight", "bold").text("# of Ads");
+
+            var sizeVals = [2, 8, 16];
+            var sizeSpacing = 55;
+            sizeVals.forEach(function(val, i) {
+                var cy = sizeLegendY + 20 + z(val) + i * sizeSpacing;
+                svg.append("circle")
+                    .attr("cx", legendX + 22).attr("cy", cy)
+                    .attr("r", z(val))
+                    .style("fill", "none").attr("stroke", "#333").attr("stroke-width", 1);
+                svg.append("text")
+                    .attr("x", legendX + 22 + z(val) + 6)
+                    .attr("y", cy + 4)
+                    .style("font-size", "11px")
+                    .text(val + " ads");
+            });
+
+            // Color legend
+            var colorLegendY = sizeLegendY + 20 + z(16) + sizeVals.length * sizeSpacing + 30;
+            svg.append("text").attr("x", legendX).attr("y", colorLegendY)
+                .style("font-size", "12px").style("font-weight", "bold").text("Sex Appeal %");
+
+            var defs = svg.append("defs");
+            var grad = defs.append("linearGradient").attr("id", "color-gradient")
+                .attr("x1","0%").attr("y1","0%").attr("x2","0%").attr("y2","100%");
+            grad.append("stop").attr("offset","0%").attr("stop-color", d3.interpolateBlues(1));
+            grad.append("stop").attr("offset","100%").attr("stop-color", d3.interpolateBlues(0));
+
+            svg.append("rect")
+                .attr("x", legendX).attr("y", colorLegendY + 10)
+                .attr("width", 16).attr("height", 90)
+                .style("fill", "url(#color-gradient)");
+            svg.append("text").attr("x", legendX + 22).attr("y", colorLegendY + 14)
+                .style("font-size", "11px").text("100%");
+            svg.append("text").attr("x", legendX + 22).attr("y", colorLegendY + 100)
+                .style("font-size", "11px").text("0%");
+
+            // Title
+            svg.append("text").attr("class", "chart-title")
+                .attr("x", width / 2).attr("y", -38).attr("text-anchor", "middle")
+                .text("Super Bowl Ads: Humor vs. Celebrity Strategy by Brand (2000–2020)");
+            svg.append("text")
+                .attr("x", width / 2).attr("y", -18).attr("text-anchor", "middle")
+                .style("font-size", "12px").style("fill", "#666")
+                .text("Bubble size = total # of ads   |   Color = % using sex appeal");
+        });
+    </script>
+</body>
+</html>

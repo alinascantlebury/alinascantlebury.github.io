@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A5: Scatterplot Matrix</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        a { align-self: flex-start; margin-bottom: 10px; }
+        .chart-title { font-size: 16px; font-weight: bold; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+    <h2 class="chart-title">Super Bowl Ads — Scatterplot Matrix</h2>
+    <p style="color:#666; font-size:13px; margin:0 0 12px;">
+        Each cell plots two ad strategy rates against each other, aggregated by brand.
+        Color = % of ads using sex appeal.
+    </p>
+    <svg id="splom"></svg>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const cellSize = 200;
+        const padding  = 24;
+
+        // The 4 variables we want in our 4x4 matrix
+        const cols = [
+            { key: "funny_rate",       label: "Funny"       },
+            { key: "celebrity_rate",   label: "Celebrity"   },
+            { key: "animals_rate",     label: "Animals"     },
+            { key: "patriotic_rate",   label: "Patriotic"   }
+        ];
+
+        const n    = cols.length;
+        const size = n * cellSize + padding;
+
+        const svg = d3.select("#splom")
+            .attr("width",  size + padding)
+            .attr("height", size + padding)
+            .append("g")
+            .attr("transform", `translate(${padding},${padding})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        const colorScale = d3.scaleSequential()
+            .domain([0, 1])
+            .interpolator(d3.interpolateReds);
+
+        d3.csv("superbowl-ads.csv").then(function(raw) {
+
+            // Convert booleans
+            const boolCols = ["funny","show_product_quickly","patriotic","celebrity","danger","animals","use_sex"];
+            raw.forEach(d => {
+                d.year = +d.year;
+                boolCols.forEach(col => {
+                    d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+                });
+            });
+
+            // Aggregate by brand
+            const brands = d3.rollups(raw,
+                v => ({
+                    brand:          v[0].brand,
+                    total_ads:      v.length,
+                    funny_rate:     d3.mean(v, d => d.funny),
+                    celebrity_rate: d3.mean(v, d => d.celebrity),
+                    animals_rate:   d3.mean(v, d => d.animals),
+                    patriotic_rate: d3.mean(v, d => d.patriotic),
+                    sex_rate:       d3.mean(v, d => d.use_sex),
+                }),
+                d => d.brand
+            ).map(d => d[1]).filter(d => d.total_ads >= 2);
+
+            // One scale per column
+            const scales = {};
+            cols.forEach(col => {
+                scales[col.key] = d3.scaleLinear()
+                    .domain([0, 1])
+                    .range([6, cellSize - 6]);
+            });
+
+            // Draw cells
+            cols.forEach((yCol, row) => {
+                cols.forEach((xCol, col) => {
+
+                    const g = svg.append("g")
+                        .attr("transform", `translate(${col * cellSize},${row * cellSize})`);
+
+                    // Cell border
+                    g.append("rect")
+                        .attr("width",  cellSize)
+                        .attr("height", cellSize)
+                        .attr("fill", row === col ? "#f5f5f5" : "#fff")
+                        .attr("stroke", "#ccc");
+
+                    if (row === col) {
+                        // Diagonal: variable name
+                        g.append("text")
+                            .attr("x", cellSize / 2)
+                            .attr("y", cellSize / 2)
+                            .attr("text-anchor", "middle")
+                            .attr("dominant-baseline", "middle")
+                            .attr("font-size", "13px")
+                            .attr("font-weight", "bold")
+                            .attr("fill", "#333")
+                            .text(xCol.label);
+                    } else {
+                        // Off-diagonal: scatterplot
+                        g.selectAll("circle")
+                            .data(brands)
+                            .join("circle")
+                            .attr("cx", d => scales[xCol.key](d[xCol.key]))
+                            .attr("cy", d => scales[yCol.key](d[yCol.key]))
+                            .attr("r", 5)
+                            .attr("fill", d => colorScale(d.sex_rate))
+                            .attr("opacity", 0.75)
+                            .attr("stroke", "#fff")
+                            .attr("stroke-width", 0.5)
+                            .on("mouseover", function(event, d) {
+                                tooltip.style("opacity", 1)
+                                    .html("<strong>" + d.brand + "</strong><br>" +
+                                          xCol.label + ": " + Math.round(d[xCol.key] * 100) + "%<br>" +
+                                          yCol.label + ": " + Math.round(d[yCol.key] * 100) + "%<br>" +
+                                          "Sex Appeal: " + Math.round(d.sex_rate * 100) + "%<br>" +
+                                          "Total Ads: " + d.total_ads)
+                                    .style("left", (event.pageX + 12) + "px")
+                                    .style("top",  (event.pageY - 28) + "px");
+                            })
+                            .on("mousemove", function(event) {
+                                tooltip
+                                    .style("left", (event.pageX + 12) + "px")
+                                    .style("top",  (event.pageY - 28) + "px");
+                            })
+                            .on("mouseleave", function() {
+                                tooltip.style("opacity", 0);
+                            });
+                    }
+
+                    // Axis labels on edges only
+                    if (row === 0) {
+                        g.append("text")
+                            .attr("x", cellSize / 2)
+                            .attr("y", -8)
+                            .attr("text-anchor", "middle")
+                            .attr("font-size", "11px")
+                            .attr("fill", "#666")
+                            .text(xCol.label);
+                    }
+                    if (col === 0) {
+                        g.append("text")
+                            .attr("transform", `rotate(-90)`)
+                            .attr("x", -(cellSize / 2))
+                            .attr("y", -10)
+                            .attr("text-anchor", "middle")
+                            .attr("font-size", "11px")
+                            .attr("fill", "#666")
+                            .text(yCol.label);
+                    }
+                });
+            });
+
+            // Color legend
+            const legendW = n * cellSize;
+            const legendY = n * cellSize + 16;
+
+            const defs = svg.append("defs");
+            const grad = defs.append("linearGradient").attr("id", "sex-gradient")
+                .attr("x1","0%").attr("x2","100%");
+            grad.append("stop").attr("offset","0%").attr("stop-color", d3.interpolateReds(0));
+            grad.append("stop").attr("offset","100%").attr("stop-color", d3.interpolateReds(1));
+
+            svg.append("rect")
+                .attr("x", 0).attr("y", legendY)
+                .attr("width", legendW).attr("height", 12)
+                .style("fill", "url(#sex-gradient)");
+
+            svg.append("text")
+                .attr("x", 0).attr("y", legendY + 24)
+                .attr("font-size", "11px").attr("fill", "#666").text("0% sex appeal");
+
+            svg.append("text")
+                .attr("x", legendW).attr("y", legendY + 24)
+                .attr("text-anchor", "end")
+                .attr("font-size", "11px").attr("fill", "#666").text("100% sex appeal");
+
+            svg.append("text")
+                .attr("x", legendW / 2).attr("y", legendY + 24)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "11px").attr("fill", "#666")
+                .text("Color = % of ads using sex appeal   |   Size = # of ads");
+        });
+    </script>
+</body>
+</html>
