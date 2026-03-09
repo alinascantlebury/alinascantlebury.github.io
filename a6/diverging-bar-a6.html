@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A6: Diverging Bar Chart</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #fff; }
+    .bar { cursor: pointer; }
+    .bar:hover { opacity: 0.8; }
+    .axis text { font-size: 13px; }
+    .axis-label { font-size: 14px; font-weight: bold; }
+    .chart-title { font-size: 20px; font-weight: bold; }
+    .baseline { stroke: #333; stroke-width: 1.5; stroke-dasharray: 4,3; }
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .legendDiverging text { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <a href="../index.html">← Back</a>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const svgWidth  = window.innerWidth;
+    const svgHeight = window.innerHeight;
+    const margin    = { top: 80, right: 280, bottom: 90, left: 90 };
+    const width     = svgWidth  - margin.left - margin.right;
+    const height    = svgHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("body").append("svg")
+      .attr("width",  svgWidth)
+      .attr("height", svgHeight);
+
+    const chart = svg.append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("../a5/superbowl-ads.csv").then(function(raw) {
+
+      const boolCols = ["funny","show_product_quickly","patriotic","celebrity","danger","animals","use_sex"];
+
+      raw.forEach(function(d) {
+        d.year = +d.year;
+        boolCols.forEach(col => {
+          d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+        });
+      });
+
+      const traitLabels = {
+        funny:                "Funny",
+        show_product_quickly: "Shows Product",
+        patriotic:            "Patriotic",
+        celebrity:            "Celebrity",
+        danger:               "Danger",
+        animals:              "Animals",
+        use_sex:              "Uses Sexual Content"
+      };
+
+      const total = raw.length;
+
+      // what % of all ads have this trait
+      const traitPcts = boolCols.map(col => ({
+        trait: col,
+        label: traitLabels[col],
+        pct:   (d3.sum(raw, d => d[col]) / total) * 100
+      }));
+
+      //  divergence midpoint
+      const overallAvgPct = d3.mean(traitPcts, d => d.pct);
+
+      const data = traitPcts.map(d => ({
+        ...d,
+        diff: d.pct - overallAvgPct   // positive = more common than avg trait, negative = less
+      }));
+
+      //  Scales 
+      const scaleX = d3.scaleBand()
+        .domain(data.map(d => d.label))
+        .range([0, width])
+        .padding(0.25);
+
+      const maxAbs = d3.max(data, d => Math.abs(d.diff));
+
+      const scaleY = d3.scaleLinear()
+        .domain([-maxAbs, maxAbs])
+        .nice()
+        .range([height, 0]);
+
+      // Diverging: red (below avg) → white (0) → blue (above avg)
+      const colorScale = d3.scaleDiverging()
+        .domain([-maxAbs, 0, maxAbs])
+        .interpolator(d3.interpolateRdBu);
+
+      //  Axes 
+      const baseline = scaleY(0);
+
+      const xAxisG = chart.append("g")
+        .attr("class", "axis axis-x")
+        .attr("transform", `translate(0,${baseline})`)
+        .call(d3.axisBottom(scaleX));
+
+      // Hide the default tick labels at baseline and redraw them at the bottom
+      xAxisG.selectAll("text").remove();
+
+      chart.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(scaleX).tickSize(5))  
+        .selectAll("text")
+          .style("font-size", "13px");
+
+      chart.append("g")
+        .attr("class", "axis axis-y")
+        .call(
+          d3.axisLeft(scaleY)
+            .ticks(8)
+            .tickFormat(d => d3.format("+.1f")(d) + "%")
+        );
+
+      // Dashed zero baseline
+      chart.append("line")
+        .attr("class", "baseline")
+        .attr("x1", 0).attr("x2", width)
+        .attr("y1", baseline).attr("y2", baseline);
+
+      //  Bars 
+      chart.selectAll(".bar")
+        .data(data)
+        .enter()
+        .append("rect")
+          .attr("class", "bar")
+          .attr("x",      d => scaleX(d.label))
+          .attr("width",  scaleX.bandwidth())
+          .attr("y",      d => d.diff >= 0 ? scaleY(d.diff) : baseline)
+          .attr("height", d => Math.abs(scaleY(d.diff) - baseline))
+          .attr("fill",   d => colorScale(d.diff))
+          .on("mouseover", (event, d) => {
+            tooltip
+              .html(
+                `<strong>${d.label}</strong><br>` +
+                `Trait frequency: ${d.pct.toFixed(1)}% of ads<br>` +
+                `Avg across traits: ${overallAvgPct.toFixed(1)}%<br>` +
+                `Difference: ${d3.format("+.1f")(d.diff)}%`
+              )
+              .style("opacity", 1);
+          })
+          .on("mousemove", (event) => {
+            tooltip
+              .style("left", (event.pageX + 12) + "px")
+              .style("top",  (event.pageY - 28) + "px");
+          })
+          .on("mouseleave", () => tooltip.style("opacity", 0));
+
+      //  Title 
+      svg.append("text")
+        .attr("class", "chart-title")
+        .attr("x", margin.left + width / 2)
+        .attr("y", margin.top / 2)
+        .attr("text-anchor", "middle")
+        .text("Ad Trait Frequency vs. Average Trait Frequency");
+
+      //  Axis labels 
+      svg.append("text")
+        .attr("class", "axis-label")
+        .attr("x", margin.left + width / 2)
+        .attr("y", svgHeight - 16)
+        .attr("text-anchor", "middle")
+        .text("Ad Trait");
+
+      svg.append("text")
+        .attr("class", "axis-label")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(margin.top + height / 2))
+        .attr("y", 22)
+        .attr("text-anchor", "middle")
+        .text("Difference from Avg Trait Frequency (%)");
+
+      //  Color legend via Susie Lu d3-legend 
+      svg.append("g")
+        .attr("class", "legendSequential")
+        .attr("transform", `translate(${margin.left + width + 30}, ${margin.top})`);
+
+      const legend = d3.legendColor()
+        .title("Ad Count")
+        .shapeWidth(20)
+        .shapeHeight(20)
+        .cells(6)
+        .orient("vertical")
+        .scale(colorScale);
+
+      svg.select(".legendSequential").call(legend);
+    });
+  </script>
+</body>
+</html>
