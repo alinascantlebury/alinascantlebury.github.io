@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-series Area Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+    <style>
+        .area {
+            opacity: 0.4;
+        }
+        circle:hover {
+            fill: orange;
+        }
+        .axis-x path,
+        .axis-y path {
+            fill: none;
+            stroke: black;
+            shape-rendering: crispEdges;
+        }
+        .axis-x .tick line,
+        .axis-y .tick line {
+            stroke: #ccc;
+        }
+        .axis text {
+            font-size: 12px;
+        }
+        .title {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+
+    <div id="chart-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const svgWidth = 1200;
+        const svgHeight = 600;
+        const margin = { top: 60, right: 250, bottom: 80, left: 100 };
+
+        const width  = svgWidth  - margin.left - margin.right;
+        const height = svgHeight - margin.top  - margin.bottom;
+
+        const svg = d3.select("#chart-container")
+            .append("svg")
+            .attr("width",  svgWidth)
+            .attr("height", svgHeight);
+
+        const tooltip = d3.select("#tooltip");
+
+        const chart = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const boolCols = ["funny", "patriotic", "danger", "use_sex"];
+
+        const traitLabels = {
+            funny:     "Funny",
+            patriotic: "Patriotic",
+            danger:    "Danger",
+            use_sex:   "Uses Sexual Content"
+        };
+
+        d3.csv("../a5/superbowl-ads.csv").then(function(raw) {
+
+            raw.forEach(function(d) {
+                d.year = +d.year;
+                boolCols.forEach(col => {
+                    d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+                });
+            });
+
+            // For each year, count how many ads have each trait
+            const years = [...new Set(raw.map(d => d.year))].sort(d3.ascending);
+
+            const data = boolCols.map(col => ({
+                trait: col,
+                label: traitLabels[col],
+                values: years.map(year => ({
+                    year: year,
+                    count: d3.sum(raw.filter(d => d.year === year), d => d[col])
+                }))
+            }));
+
+            // Scales
+            const scaleX = d3.scaleLinear()
+                .domain(d3.extent(years))
+                .range([0, width]);
+
+            const scaleY = d3.scaleLinear()
+                .domain([0, d3.max(data, trait => d3.max(trait.values, d => d.count))])
+                .nice()
+                .range([height, 0]);
+
+            const colors = ["#7fc97f", "#beaed4", "#fdc086", "#ffff99", "#386cb0"];
+
+            const colorScale = d3.scaleOrdinal()
+                .domain(boolCols.map(c => traitLabels[c]))
+                .range(colors);
+
+            // Axes
+            chart.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(scaleX).tickValues(years).tickFormat(d3.format("d")));
+
+            chart.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(scaleY).ticks(8));
+
+            // Area generator
+            const area = d3.area()
+                .x(d => scaleX(d.year))
+                .y0(scaleY(0))
+                .y1(d => scaleY(d.count));
+
+            // Draw areas
+            chart.selectAll("path.area")
+                .data(data)
+                .join("path")
+                .attr("class", "area")
+                .attr("d", d => area(d.values))
+                .style("fill",   d => colorScale(d.label))
+                .style("stroke", d => colorScale(d.label))
+                .on("mouseover", (event, d) => {
+                    tooltip
+                        .html(`<strong>${d.label}</strong>`)
+                        .style("opacity", 1);
+                })
+                .on("mousemove", (event) => {
+                    tooltip
+                        .style("left", (event.pageX + 12) + "px")
+                        .style("top",  (event.pageY - 28) + "px");
+                })
+                .on("mouseleave", () => tooltip.style("opacity", 0));
+
+            // Dots with detailed tooltip
+            data.forEach(trait => {
+                chart.selectAll(`.dot-${trait.trait}`)
+                    .data(trait.values)
+                    .join("circle")
+                    .attr("class", `dot-${trait.trait}`)
+                    .attr("cx", d => scaleX(d.year))
+                    .attr("cy", d => scaleY(d.count))
+                    .attr("r", 4)
+                    .attr("fill", colorScale(trait.label))
+                    .on("mouseover", (event, d) => {
+                        tooltip
+                            .html(`<strong>${trait.label}</strong><br>Year: ${d.year}<br>Count: ${d.count}`)
+                            .style("opacity", 1);
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip
+                            .style("left", (event.pageX + 12) + "px")
+                            .style("top",  (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", () => tooltip.style("opacity", 0));
+            });
+
+            // Title
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", svgWidth / 2)
+                .attr("y", 30)
+                .attr("text-anchor", "middle")
+                .text("Super Bowl Ad Traits Over Time - Multi-series Area Chart");
+
+            // X-axis label
+            svg.append("text")
+                .attr("class", "x label")
+                .attr("text-anchor", "middle")
+                .attr("x", svgWidth / 2)
+                .attr("y", svgHeight - 20)
+                .text("Year");
+
+            // Y-axis label
+            svg.append("text")
+                .attr("class", "y label")
+                .attr("text-anchor", "middle")
+                .attr("x", -svgHeight / 2)
+                .attr("y", 8)
+                .attr("dy", ".75em")
+                .attr("transform", "rotate(-90)")
+                .text("Number of Ads");
+
+            // Legend via Susie Lu d3-legend
+            svg.append("g")
+                .attr("class", "legendOrdinal")
+                .attr("transform", `translate(${width + margin.left + 20}, 100)`);
+
+            var legendOrdinal = d3.legendColor()
+                .shapeWidth(30)
+                .orient("vertical")
+                .scale(colorScale)
+                .title("Trait");
+
+            svg.select(".legendOrdinal")
+                .call(legendOrdinal);
+        });
+    </script>
+</body>
+</html>

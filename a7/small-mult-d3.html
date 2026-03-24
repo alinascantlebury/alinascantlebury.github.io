@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Small Multiples</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+    <style>
+        body { margin: 0; font-family: sans-serif; background: #fff; }
+        .line {
+            fill: none;
+            stroke-width: 2.5;
+        }
+        circle:hover {
+            fill: orange;
+        }
+        .axis-x path,
+        .axis-y path {
+            fill: none;
+            stroke: black;
+            shape-rendering: crispEdges;
+        }
+        .axis-x .tick line,
+        .axis-y .tick line {
+            stroke: #ccc;
+        }
+        .axis text {
+            font-size: 12px;
+        }
+        .title {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #my_dataviz {
+            display: grid;
+            grid-template-columns: 1fr 1fr ;
+            width: 100vw;
+            box-sizing: border-box;
+        }
+        #my_dataviz svg {
+            width: 70%;
+            height: auto;
+        }
+        #legend-container {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            padding: 10px 0 20px;
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html">← Back</a>
+
+    <div id="my_dataviz"></div>
+
+    <script>
+        const panelW = 380;
+        const panelH = 260;
+        var margin = { top: 50, right: 30, bottom: 70, left: 80 },
+            width  = panelW - margin.left - margin.right,
+            height = panelH - margin.top  - margin.bottom;
+
+        const boolCols = ["funny", "patriotic", "danger", "use_sex"];
+
+        const traitLabels = {
+            funny:     "Funny",
+            patriotic: "Patriotic",
+            danger:    "Danger",
+            use_sex:   "Uses Sexual Content"
+        };
+
+        d3.csv("../a5/superbowl-ads.csv").then(function(raw) {
+
+            raw.forEach(function(d) {
+                d.year = +d.year;
+                boolCols.forEach(col => {
+                    d[col] = (d[col] === "True" || d[col] === "TRUE") ? 1 : 0;
+                });
+            });
+
+            const years = [...new Set(raw.map(d => d.year))].sort(d3.ascending);
+
+            const sumstat = boolCols.map(col => ({
+                key: traitLabels[col],
+                values: years.map(year => ({
+                    year: year,
+                    count: d3.sum(raw.filter(d => d.year === year), d => d[col])
+                }))
+            }));
+
+            const scaleX = d3.scaleLinear()
+                .domain(d3.extent(years))
+                .range([0, width]);
+
+            const scaleY = d3.scaleLinear()
+                .domain([0, d3.max(sumstat, t => d3.max(t.values, d => d.count))])
+                .nice()
+                .range([height, 0]);
+
+            const colors = ["#7fc97f", "#beaed4", "#fdc086",  "#386cb0"];
+
+            const colorScale = d3.scaleOrdinal()
+                .domain(boolCols.map(c => traitLabels[c]))
+                .range(colors);
+
+            var svg = d3.select("#my_dataviz")
+                .selectAll("uniqueChart")
+                .data(sumstat)
+                .enter()
+                .append("svg")
+                .attr("viewBox", `0 0 ${panelW} ${panelH}`)
+                .attr("preserveAspectRatio", "xMidYMid meet")
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            svg.append("path")
+                .attr("fill", "none")
+                .attr("stroke", d => colorScale(d.key))
+                .attr("stroke-width", 2.5)
+                .attr("d", function(d) {
+                    return d3.line()
+                        .x(v => scaleX(v.year))
+                        .y(v => scaleY(v.count))
+                        (d.values);
+                });
+
+            svg.each(function(trait) {
+                d3.select(this).selectAll("circle")
+                    .data(trait.values)
+                    .join("circle")
+                    .attr("cx", v => scaleX(v.year))
+                    .attr("cy", v => scaleY(v.count))
+                    .attr("r", 5)
+                    .attr("fill", colorScale(trait.key));
+            });
+
+            svg.append("g")
+                .attr("class", "axis axis-x")
+                .attr("transform", `translate(0,${height})`)
+                .call(
+                    d3.axisBottom(scaleX)
+                        .tickValues(years.filter((_, i) => i % 2 === 0))
+                        .tickFormat(d3.format("d"))
+                )
+                .selectAll("text")
+                    .attr("transform", "rotate(-45)")
+                    .attr("text-anchor", "end")
+                    .attr("dx", "-0.5em")
+                    .attr("dy", "0.15em")
+                    .style("font-size", "12px");
+
+            svg.append("g")
+                .attr("class", "axis axis-y")
+                .call(d3.axisLeft(scaleY).ticks(6).tickFormat(d3.format("d")))
+                .selectAll("text")
+                    .style("font-size", "12px");
+
+            svg.append("text")
+                .attr("text-anchor", "start")
+                .attr("y", -18)
+                .attr("x", 0)
+                .attr("font-size", "16px")
+                .attr("font-weight", "bold")
+                .text(d => d.key)
+                .style("fill", d => colorScale(d.key));
+
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("x", width / 2)
+                .attr("y", height + margin.bottom - 5)
+                .attr("font-size", "13px")
+                .attr("font-weight", "bold")
+                .text("Year");
+
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("x", -height / 2)
+                .attr("y", -60)
+                .attr("dy", ".75em")
+                .attr("font-size", "13px")
+                .attr("font-weight", "bold")
+                .attr("transform", "rotate(-90)")
+                .text("Number of Ads");
+
+            const legendContainer = d3.select("#my_dataviz")
+                .append("div")
+                .attr("id", "legend-container");
+
+            const legendSvg = legendContainer
+                .append("svg")
+                .attr("width", 220)
+                .attr("height", 140);
+
+            legendSvg.append("g")
+                .attr("class", "legendOrdinal")
+                .attr("transform", "translate(10,20)");
+
+            var legendOrdinal = d3.legendColor()
+                .shapeWidth(30)
+                .orient("vertical")
+                .scale(colorScale)
+                .title("Trait");
+
+            legendSvg.select(".legendOrdinal")
+                .call(legendOrdinal);
+        });
+    </script>
+</body>
+</html>
