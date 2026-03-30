@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Karate Edge Bundling</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<style>
+.tooltip {
+    position: absolute;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    pointer-events: none;
+    opacity: 0;
+}
+</style>
+</head>
+
+<body>
+
+<div id="chart-container"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+
+const width = 1000;
+const radius = width / 2;
+
+const tooltip = d3.select("#tooltip");
+
+const colors = ["#fffff"];
+
+d3.csv("karate.csv").then(data => {
+
+    const nodes = Array.from(
+        new Set(data.flatMap(d => [d.source, d.target]))
+    ).sort((a,b) => +a - +b);
+
+    const neighbors = {};
+    nodes.forEach(n => neighbors[n] = []);
+
+    data.forEach(d => {
+        neighbors[d.source].push(d.target);
+        neighbors[d.target].push(d.source);
+    });
+
+    const rootData = {
+        name: "root",
+        children: nodes.map(n => ({ name: n }))
+    };
+
+    const cluster = d3.cluster()
+        .size([2 * Math.PI, radius - 100]);
+
+    const root = cluster(d3.hierarchy(rootData));
+
+    const leaves = root.leaves();
+
+    const map = new Map(leaves.map(d => [d.data.name, d]));
+
+    const links = [];
+    data.forEach(d => {
+        const source = map.get(d.source);
+        const target = map.get(d.target);
+        if (source && target) {
+            links.push(source.path(target));
+        }
+    });
+
+    const svg = d3.select("#chart-container")
+        .append("svg")
+        .attr("viewBox", [-radius, -radius, width, width])
+        .style("font", "10px sans-serif");
+
+    const line = d3.lineRadial()
+        .curve(d3.curveBundle.beta(0.85))
+        .radius(d => d.y)
+        .angle(d => d.x);
+
+    svg.append("g")
+        .attr("fill", "none")
+        .selectAll("path")
+        .data(links)
+        .join("path")
+        .attr("d", line)
+        .attr("stroke", "#ccc")
+        .attr("stroke-opacity", 0.6);
+
+    const node = svg.append("g")
+        .selectAll("text")
+        .data(leaves)
+        .join("text")
+        .attr("transform", d =>
+            `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`
+        )
+        .attr("dy", "0.31em")
+        .attr("x", d => d.x < Math.PI ? 6 : -6)
+        .attr("text-anchor", d => d.x < Math.PI ? "start" : "end")
+        .attr("transform", d =>
+            `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0) ${
+                d.x >= Math.PI ? "rotate(180)" : ""
+            }`
+        )
+        .text(d => d.data.name)
+        .style("fill", (d, i) => colors[i % colors.length])
+        .on("mouseover", (event, d) => {
+            tooltip
+                .html(`Node ${d.data.name}`)
+                .style("opacity", 1)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 20) + "px");
+        })
+        .on("mouseout", () => {
+            tooltip.style("opacity", 0);
+        });
+
+    svg.append("text")
+        .attr("y", -radius + 20)
+        .attr("text-anchor", "middle")
+        .style("font-size", "18px")
+        .style("font-weight", "bold")
+        .text("Karate Club Network – Edge Bundling");
+
+});
+
+</script>
+
+</body>
+</html>

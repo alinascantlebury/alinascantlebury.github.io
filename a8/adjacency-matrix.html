@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Karate Club Adjacency Matrix</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<style>
+.axis text {
+    font-size: 10px;
+}
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;  
+    align-items: center;      
+}
+.tooltip {
+    position: absolute;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    pointer-events: none;
+    opacity: 0;
+}
+</style>
+</head>
+
+<body>
+    <a href="../index.html">← Back</a>
+
+<div id="chart-container"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+
+const svgWidth = 900;
+const svgHeight = 900;
+const margin = { top: 120, right: 20, bottom: 20, left: 120 };
+
+const width = svgWidth - margin.left - margin.right;
+const height = svgHeight - margin.top - margin.bottom;
+
+const svg = d3.select("#chart-container")
+    .append("svg")
+    .attr("width", svgWidth)
+    .attr("height", svgHeight);
+
+const chart = svg.append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+const tooltip = d3.select("#tooltip");
+
+d3.csv("karate.csv").then(function(data) {
+
+    const nodes = Array.from(
+        new Set(data.flatMap(d => [d.source, d.target]))
+    ).sort((a,b) => +a - +b);
+
+    const adjacency = {};
+    nodes.forEach(n => {
+        adjacency[n] = {};
+        nodes.forEach(m => adjacency[n][m] = 0);
+    });
+
+    data.forEach(d => {
+        adjacency[d.source][d.target] = 1;
+        adjacency[d.target][d.source] = 1;
+    });
+
+    const matrix = nodes.map(row => {
+        adjacency[row].index = row;
+        return adjacency[row];
+    });
+
+    const x = d3.scaleBand()
+        .domain(nodes)
+        .range([0, width]);
+
+    const y = d3.scaleBand()
+        .domain(nodes)
+        .range([0, height]);
+
+    const color = d3.scaleQuantize()
+        .domain([0, 1])
+        .range([
+            "#f0f9e8",
+            "#bae4bc",
+            "#7bccc4",
+            "#43a2ca",
+            "#0868ac"
+        ]);
+
+    chart.append("g")
+        .call(d3.axisTop(x))
+        .selectAll("text")
+        .attr("transform", "rotate(-60)")
+        .style("text-anchor", "start");
+
+    chart.append("g")
+        .call(d3.axisLeft(y));
+
+    const rows = chart.selectAll("g.row")
+        .data(matrix)
+        .join("g")
+        .attr("class", "row");
+
+    const cells = rows.selectAll("rect")
+        .data(d => nodes.map(col => ({
+            x: d.index,
+            y: col,
+            value: d[col]
+        })))
+        .join("rect")
+        .attr("x", d => x(d.x))
+        .attr("y", d => y(d.y))
+        .attr("width", x.bandwidth())
+        .attr("height", y.bandwidth())
+        .attr("fill", d => color(d.value))
+        .on("mouseover", (event, d) => {
+
+            chart.selectAll("rect")
+                .style("opacity", r =>
+                    (r.x === d.x || r.y === d.y) ? 1 : 0.1
+                );
+
+            tooltip
+                .html(`<strong>${d.x}</strong> - <strong>${d.y}</strong><br>${d.value ? "Connected" : "Not connected"}`)
+                .style("opacity", 1);
+        })
+        .on("mousemove", (event) => {
+            tooltip
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 20) + "px");
+        })
+        .on("mouseout", () => {
+            chart.selectAll("rect").style("opacity", 1);
+            tooltip.style("opacity", 0);
+        });
+
+    svg.append("text")
+        .attr("x", svgWidth / 2)
+        .attr("y", 40)
+        .attr("text-anchor", "middle")
+        .style("font-size", "20px")
+        .style("font-weight", "bold")
+        .text("Karate Club Network – Adjacency Matrix");
+
+});
+
+</script>
+</body>
+</html>
