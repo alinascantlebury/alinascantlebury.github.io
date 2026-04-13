@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A10: Deceptive vs Ethical Charts</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #fff; }
+    .axis text { font-size: 12px; }
+    .axis-label { font-size: 13px; font-weight: bold; }
+    .chart-title { font-size: 16px; font-weight: bold; }
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const data = [
+      { major:"Nursing",           screen:4.2, gpa:3.41 },
+      { major:"Education",         screen:5.1, gpa:3.35 },
+      { major:"Biology",           screen:5.7, gpa:3.28 },
+      { major:"Mathematics",       screen:5.9, gpa:3.22 },
+      { major:"Business",          screen:6.5, gpa:3.08 },
+      { major:"Political Science", screen:6.4, gpa:3.05 },
+      { major:"Psychology",        screen:6.8, gpa:3.02 },
+      { major:"Engineering",       screen:6.9, gpa:2.98 },
+      { major:"Liberal Arts",      screen:7.1, gpa:2.95 },
+      { major:"Computer Science",  screen:7.8, gpa:2.81 },
+      { major:"Communications",    screen:7.9, gpa:2.72 },
+      { major:"Art & Design",      screen:8.1, gpa:2.65 }
+    ];
+
+    const tooltip = d3.select("#tooltip");
+
+    // ── Shared trend line calculation ─────────────────────────────────
+    const xMean = d3.mean(data, d => d.screen);
+    const yMean = d3.mean(data, d => d.gpa);
+    const slope = d3.sum(data.map(d => (d.screen - xMean) * (d.gpa - yMean))) /
+                  d3.sum(data.map(d => (d.screen - xMean) ** 2));
+    const intercept = yMean - slope * xMean;
+
+    // ── DECEPTIVE CHART ───────────────────────────────────────────────
+    // Manipulation 1: truncated Y-axis (2.45 instead of 0)
+    // Manipulation 2: alarming red/green sequential color scale
+    // Manipulation 3: trend line with no confidence interval
+    (function() {
+      const margin = { top: 60, right: 180, bottom: 80, left: 80 };
+      const svgW = 700, svgH = 500;
+      const w = svgW - margin.left - margin.right;
+      const h = svgH - margin.top  - margin.bottom;
+
+      const svg = d3.select("body").append("svg")
+        .attr("width", svgW).attr("height", svgH);
+      const g = svg.append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const scaleX = d3.scaleLinear().domain([3.8, 8.6]).range([0, w]);
+      const scaleY = d3.scaleLinear().domain([2.45, 3.55]).range([h, 0]); // truncated
+
+      const alarmColor = d3.scaleSequential()
+        .domain([8.6, 3.8])
+        .interpolator(d3.interpolateRdYlGn); // high screen = red, low = green
+
+      g.append("g").attr("class","axis")
+        .attr("transform",`translate(0,${h})`)
+        .call(d3.axisBottom(scaleX).ticks(6).tickFormat(d => d + "h"));
+      g.append("g").attr("class","axis")
+        .call(d3.axisLeft(scaleY).ticks(6).tickFormat(d3.format(".2f")));
+
+      g.append("line")
+        .attr("x1", scaleX(4.0)).attr("y1", scaleY(slope * 4.0 + intercept))
+        .attr("x2", scaleX(8.3)).attr("y2", scaleY(slope * 8.3 + intercept))
+        .attr("stroke", "#e94560").attr("stroke-width", 2.5)
+        .attr("stroke-dasharray", "6,3");
+
+      g.selectAll("circle").data(data).join("circle")
+        .attr("cx", d => scaleX(d.screen))
+        .attr("cy", d => scaleY(d.gpa))
+        .attr("r", 8)
+        .attr("fill", d => alarmColor(d.screen))
+        .attr("stroke", "#fff").attr("stroke-width", 1)
+        .on("mouseover", (event, d) => tooltip
+          .html(`<strong>${d.major}</strong><br>Screen: ${d.screen}h/day<br>GPA: ${d.gpa}`)
+          .style("opacity", 1))
+        .on("mousemove", event => tooltip
+          .style("left", (event.pageX + 12) + "px")
+          .style("top",  (event.pageY - 28) + "px"))
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+
+      svg.append("text").attr("class","chart-title")
+        .attr("x", margin.left + w / 2).attr("y", 30)
+        .attr("text-anchor","middle")
+        .text("Screen Time Is Destroying Student GPAs");
+
+      svg.append("text").attr("class","axis-label")
+        .attr("x", margin.left + w / 2).attr("y", svgH - 20)
+        .attr("text-anchor","middle").text("Avg Daily Screen Time (hours)");
+      svg.append("text").attr("class","axis-label")
+        .attr("transform","rotate(-90)")
+        .attr("x", -(margin.top + h / 2)).attr("y", 20)
+        .attr("text-anchor","middle").text("GPA");
+
+      g.append("text")
+        .attr("x", 0).attr("y", h + 50)
+        .attr("font-size","11px").attr("fill","#e94560").attr("font-family","sans-serif")
+        .text("⚠ Y-axis starts at 2.45, not 0");
+
+      svg.append("g").attr("class","legendSeq")
+        .attr("transform",`translate(${margin.left + w + 16}, ${margin.top})`);
+      const leg = d3.legendColor()
+        .title("Screen Time")
+        .cells(6)
+        .orient("vertical")
+        .shapeWidth(16).shapeHeight(16)
+        .scale(d3.scaleSequential()
+          .domain([3.8, 8.6])
+          .interpolator(t => alarmColor(3.8 + t * (8.6 - 3.8))));
+      svg.select(".legendSeq").call(leg);
+    })();
+
+    // ── ETHICAL CHART ─────────────────────────────────────────────────
+    // Full 0-4.0 Y-axis, neutral qualitative colors, no trend line
+    (function() {
+      const margin = { top: 60, right: 180, bottom: 80, left: 80 };
+      const svgW = 700, svgH = 500;
+      const w = svgW - margin.left - margin.right;
+      const h = svgH - margin.top  - margin.bottom;
+
+      const svg = d3.select("body").append("svg")
+        .attr("width", svgW).attr("height", svgH);
+      const g = svg.append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const scaleX = d3.scaleLinear().domain([0, 10]).range([0, w]);
+      const scaleY = d3.scaleLinear().domain([0, 4.0]).range([h, 0]); 
+
+      const colorScale = d3.scaleOrdinal()
+        .domain(data.map(d => d.major))
+        .range(d3.schemeTableau10.concat(["#e377c2","#bcbd22"]));
+
+      g.append("g")
+        .call(d3.axisLeft(scaleY).ticks(8).tickSize(-w).tickFormat(""))
+        .call(gg => gg.select(".domain").remove())
+        .call(gg => gg.selectAll("line").attr("stroke","#f0f0f0"));
+
+      g.append("g").attr("class","axis")
+        .attr("transform",`translate(0,${h})`)
+        .call(d3.axisBottom(scaleX).ticks(10).tickFormat(d => d + "h"));
+      g.append("g").attr("class","axis")
+        .call(d3.axisLeft(scaleY).ticks(8).tickFormat(d3.format(".1f")));
+
+      g.selectAll("circle").data(data).join("circle")
+        .attr("cx", d => scaleX(d.screen))
+        .attr("cy", d => scaleY(d.gpa))
+        .attr("r", 8)
+        .attr("fill", d => colorScale(d.major))
+        .attr("stroke","#fff").attr("stroke-width", 1)
+        .attr("fill-opacity", 0.88)
+        .on("mouseover", (event, d) => tooltip
+          .html(`<strong>${d.major}</strong><br>Screen: ${d.screen}h/day<br>GPA: ${d.gpa}`)
+          .style("opacity", 1))
+        .on("mousemove", event => tooltip
+          .style("left", (event.pageX + 12) + "px")
+          .style("top",  (event.pageY - 28) + "px"))
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+
+      svg.append("text").attr("class","chart-title")
+        .attr("x", margin.left + w / 2).attr("y", 30)
+        .attr("text-anchor","middle")
+        .text("Screen Time vs. GPA by Major (Full Scale)");
+
+      svg.append("text").attr("class","axis-label")
+        .attr("x", margin.left + w / 2).attr("y", svgH - 20)
+        .attr("text-anchor","middle").text("Avg Daily Screen Time (hours)");
+      svg.append("text").attr("class","axis-label")
+        .attr("transform","rotate(-90)")
+        .attr("x", -(margin.top + h / 2)).attr("y", 20)
+        .attr("text-anchor","middle").text("GPA (0–4.0 scale)");
+
+      svg.append("g").attr("class","legendOrdinal")
+        .attr("transform",`translate(${margin.left + w + 10}, ${margin.top})`);
+      const leg = d3.legendColor()
+        .title("Major")
+        .orient("vertical")
+        .shapeWidth(12).shapeHeight(12).shapePadding(2)
+        .scale(colorScale);
+      svg.select(".legendOrdinal").call(leg);
+    })();
+  </script>
+</body>
+</html>
